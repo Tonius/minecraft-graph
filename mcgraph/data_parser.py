@@ -1,24 +1,32 @@
-from typing import Callable, Dict, Iterable, List, Optional, Union
+import json
+from typing import Dict, Iterable, List, Optional, Union
+from zipfile import ZipFile
 
 from mcgraph.graph_builder import Edge, GraphBuilder, Node
 
 
 class DataParser:
-    def __init__(self, graph_builder: GraphBuilder):
+    def __init__(self, jar: ZipFile, graph_builder: GraphBuilder):
+        self.jar = jar
         self.graph_builder = graph_builder
 
-    def parse_file(self, filename: str, get_data: Callable[[], Dict]):
+    def read_jar(self):
+        for filename in self.jar.namelist():
+            self.read_file(filename)
+
+    def read_file(self, filename: str):
         if filename.startswith("data/minecraft/recipes/"):
-            self.parse_recipe(get_data())
+            self.parse_recipe(self.get_file_data(filename))
         elif filename.startswith("data/minecraft/tags/items/"):
             name = filename[len("data/minecraft/tags/items/") : -len(".json")]
-            self.parse_item_tag(name, get_data())
-        elif filename.startswith("data/minecraft/loot_tables/blocks/"):
-            name = filename[len("data/minecraft/loot_tables/blocks/") : -len(".json")]
-            self.parse_block_loot_table(name, get_data())
-        elif filename.startswith("data/minecraft/loot_tables/entities/"):
-            name = filename[len("data/minecraft/loot_tables/entities/") : -len(".json")]
-            self.parse_entity_loot_table(name, get_data())
+            self.parse_item_tag(name, self.get_file_data(filename))
+        elif filename.startswith("data/minecraft/loot_tables/"):
+            name = filename[len("data/minecraft/loot_tables/") : -len(".json")]
+            self.parse_loot_table(name, self.get_file_data(filename))
+
+    def get_file_data(self, filename: str):
+        with self.jar.open(filename) as file:
+            return json.loads(file.read())
 
     def parse_recipe(self, data: Dict):
         if data["type"] == "minecraft:crafting_shaped":
@@ -81,15 +89,17 @@ class DataParser:
 
             self.graph_builder.add_edge(Edge(value_node, tag_node, color="#009900"))
 
-    def parse_block_loot_table(self, name: str, data: Dict):
-        if "pools" not in data:
-            return
+    def parse_loot_table(self, name: str, data: Dict):
+        if name.startswith("blocks/"):
+            self.parse_block_loot_table(name[len("blocks/") :], data)
+        elif name.startswith("entities/"):
+            self.parse_entity_loot_table(name[len("entities/") :], data)
 
+    def parse_block_loot_table(self, name: str, data: Dict):
         block_node = get_item_or_block_node(name)
 
         drop_nodes: List[Node] = []
-        for pool in data["pools"]:
-            parse_loot_table_entries(pool["entries"], drop_nodes, not_node=block_node)
+        self.parse_loot_table_data(data, drop_nodes, not_node=block_node)
 
         if len(drop_nodes) > 0:
             self.graph_builder.add_node(block_node)
@@ -101,14 +111,10 @@ class DataParser:
                 )
 
     def parse_entity_loot_table(self, name: str, data: Dict):
-        if "pools" not in data:
-            return
-
         entity_node = get_entity_node(name)
 
         drop_nodes: List[Node] = []
-        for pool in data["pools"]:
-            parse_loot_table_entries(pool["entries"], drop_nodes)
+        self.parse_loot_table_data(data, drop_nodes)
 
         if len(drop_nodes) > 0:
             self.graph_builder.add_node(entity_node)
@@ -118,6 +124,35 @@ class DataParser:
                 self.graph_builder.add_edge(
                     Edge(entity_node, drop_node, color="#00ffff")
                 )
+
+    def parse_loot_table_data(
+        self, data: Dict, nodes: List[Node], not_node: Optional[Node] = None
+    ):
+        if "pools" not in data:
+            return
+
+        for pool in data["pools"]:
+            self.parse_loot_table_entries(pool["entries"], nodes, not_node)
+
+    def parse_loot_table_entries(
+        self, entries: List[Dict], nodes: List[Node], not_node: Optional[Node] = None
+    ):
+        for entry in entries:
+            if entry["type"] == "minecraft:item":
+                node = get_item_or_block_node(entry["name"])
+                if node != not_node and node not in nodes:
+                    nodes.append(node)
+            elif entry["type"] == "minecraft:tag":
+                node = get_item_tag_node(entry["name"])
+                if node != not_node and node not in nodes:
+                    nodes.append(node)
+            elif entry["type"] == "minecraft:alternatives":
+                self.parse_loot_table_entries(entry["children"], nodes, not_node)
+            elif entry["type"] == "minecraft:loot_table":
+                loot_table_data = self.get_file_data(
+                    f"data/minecraft/loot_tables/{without_namespace(entry['name'])}.json"
+                )
+                self.parse_loot_table_data(loot_table_data, nodes, not_node)
 
 
 def without_namespace(name: str):
@@ -168,15 +203,3 @@ def parse_ingredients(data: Iterable[Union[Dict, List[Dict]]]):
         ingredients += parse_ingredient(item)
 
     return ingredients
-
-
-def parse_loot_table_entries(
-    entries: List[Dict], nodes: List[Node], not_node: Optional[Node] = None
-):
-    for entry in entries:
-        if entry["type"] == "minecraft:item":
-            node = get_item_or_block_node(entry["name"])
-            if node != not_node and node not in nodes:
-                nodes.append(node)
-        elif entry["type"] == "minecraft:alternatives":
-            parse_loot_table_entries(entry["children"], nodes, not_node)
