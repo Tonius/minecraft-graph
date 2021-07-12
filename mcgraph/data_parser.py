@@ -1,4 +1,4 @@
-from typing import Callable, Dict, Iterable, List, Union
+from typing import Callable, Dict, Iterable, List, Optional, Union
 
 from mcgraph.graph_builder import Edge, GraphBuilder, Node
 
@@ -16,6 +16,9 @@ class DataParser:
         elif filename.startswith("data/minecraft/loot_tables/blocks/"):
             name = filename[len("data/minecraft/loot_tables/blocks/") : -len(".json")]
             self.parse_block_loot_table(name, get_data())
+        elif filename.startswith("data/minecraft/loot_tables/entities/"):
+            name = filename[len("data/minecraft/loot_tables/entities/") : -len(".json")]
+            self.parse_entity_loot_table(name, get_data())
 
     def parse_recipe(self, data: Dict):
         if data["type"] == "minecraft:crafting_shaped":
@@ -86,7 +89,7 @@ class DataParser:
 
         drop_nodes: List[Node] = []
         for pool in data["pools"]:
-            self.parse_loot_table_entries(pool["entries"], block_node, drop_nodes)
+            parse_loot_table_entries(pool["entries"], drop_nodes, not_node=block_node)
 
         if len(drop_nodes) > 0:
             self.graph_builder.add_node(block_node)
@@ -97,16 +100,24 @@ class DataParser:
                     Edge(block_node, drop_node, color="#ff00ff")
                 )
 
-    def parse_loot_table_entries(
-        self, entries: List[Dict], not_node: Node, nodes: List[Node]
-    ):
-        for entry in entries:
-            if entry["type"] == "minecraft:item":
-                node = get_item_or_block_node(entry["name"])
-                if node != not_node and node not in nodes:
-                    nodes.append(node)
-            elif entry["type"] == "minecraft:alternatives":
-                self.parse_loot_table_entries(entry["children"], not_node, nodes)
+    def parse_entity_loot_table(self, name: str, data: Dict):
+        if "pools" not in data:
+            return
+
+        entity_node = get_entity_node(name)
+
+        drop_nodes: List[Node] = []
+        for pool in data["pools"]:
+            parse_loot_table_entries(pool["entries"], drop_nodes)
+
+        if len(drop_nodes) > 0:
+            self.graph_builder.add_node(entity_node)
+
+            for drop_node in drop_nodes:
+                self.graph_builder.add_node(drop_node)
+                self.graph_builder.add_edge(
+                    Edge(entity_node, drop_node, color="#00ffff")
+                )
 
 
 def without_namespace(name: str):
@@ -126,6 +137,12 @@ def get_item_tag_node(name: str):
     name = without_namespace(name)
 
     return Node(f"item_tag/{name}", name, shape="box")
+
+
+def get_entity_node(name: str):
+    name = without_namespace(name)
+
+    return Node(f"entity/{name}", name, shape="hexagon")
 
 
 def parse_item_or_tag(data: Dict):
@@ -151,3 +168,15 @@ def parse_ingredients(data: Iterable[Union[Dict, List[Dict]]]):
         ingredients += parse_ingredient(item)
 
     return ingredients
+
+
+def parse_loot_table_entries(
+    entries: List[Dict], nodes: List[Node], not_node: Optional[Node] = None
+):
+    for entry in entries:
+        if entry["type"] == "minecraft:item":
+            node = get_item_or_block_node(entry["name"])
+            if node != not_node and node not in nodes:
+                nodes.append(node)
+        elif entry["type"] == "minecraft:alternatives":
+            parse_loot_table_entries(entry["children"], nodes, not_node)
