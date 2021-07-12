@@ -4,12 +4,11 @@ from mcgraph.data_parser import DataParser
 from mcgraph.graph_builder import GraphBuilder
 
 # TODO:
-# - entity drops
 # - biomes
 # - dimensions / portals
 # - structures / loot chests
 # - entity spawning
-# - hardcoded recipes (interactions)
+# - hardcoded recipes (in-world, special crafting, etc.)
 
 
 def mcgraph(jar_path: str):
