@@ -5,7 +5,6 @@ from mcgraph.data_parser import DataParser
 from mcgraph.graph_builder import GraphBuilder
 
 # TODO:
-# - remaining recipe types
 # - entity drops
 # - biomes
 # - dimensions / portals
