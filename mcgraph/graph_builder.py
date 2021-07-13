@@ -33,7 +33,7 @@ class GraphBuilder:
 
     def build(self):
         graph = Digraph()
-        graph.attr(rankdir="LR", overlap="false", splines="false")
+        graph.attr(layout="neato", overlap="scalexy", splines="false")
 
         for node in self.nodes:
             graph.node(node.name, label=node.label, shape=node.shape)
