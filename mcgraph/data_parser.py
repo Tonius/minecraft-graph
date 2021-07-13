@@ -5,6 +5,18 @@ from zipfile import ZipFile
 from mcgraph.graph_builder import Edge, GraphBuilder, Node
 
 
+class EdgeColors:
+    crafting = "#0000ff"
+    smelting = "#cc0000"
+    smithing = "#777777"
+    item_tag = "#009900"
+    block_drop = "#ff00ff"
+    entity_drop = "#00ffff"
+    chest_loot = "#ffaa00"
+    piglin_bartering = "#ff96cc"
+    fishing = "#008cff"
+
+
 class DataParser:
     def __init__(self, jar: ZipFile, graph_builder: GraphBuilder):
         self.jar = jar
@@ -44,7 +56,9 @@ class DataParser:
 
         for ingredient in parse_ingredients(data["key"].values()):
             self.graph_builder.add_node(ingredient)
-            self.graph_builder.add_edge(Edge(ingredient, result, color="#0000ff"))
+            self.graph_builder.add_edge(
+                Edge(ingredient, result, color=EdgeColors.crafting)
+            )
 
     def parse_crafting_shapeless_recipe(self, data: Dict):
         result = parse_item_or_tag(data["result"])
@@ -52,7 +66,9 @@ class DataParser:
 
         for ingredient in parse_ingredients(data["ingredients"]):
             self.graph_builder.add_node(ingredient)
-            self.graph_builder.add_edge(Edge(ingredient, result, color="#0000ff"))
+            self.graph_builder.add_edge(
+                Edge(ingredient, result, color=EdgeColors.crafting)
+            )
 
     def parse_smelting_recipe(self, data: Dict):
         result = get_item_or_block_node(data["result"])
@@ -60,7 +76,9 @@ class DataParser:
 
         for ingredient in parse_ingredient(data["ingredient"]):
             self.graph_builder.add_node(ingredient)
-            self.graph_builder.add_edge(Edge(ingredient, result, color="#cc0000"))
+            self.graph_builder.add_edge(
+                Edge(ingredient, result, color=EdgeColors.smelting)
+            )
 
     def parse_smithing_recipe(self, data: Dict):
         result = parse_item_or_tag(data["result"])
@@ -72,8 +90,8 @@ class DataParser:
         addition = parse_item_or_tag(data["addition"])
         self.graph_builder.add_node(addition)
 
-        self.graph_builder.add_edge(Edge(base, result, color="#777777"))
-        self.graph_builder.add_edge(Edge(addition, result, color="#777777"))
+        self.graph_builder.add_edge(Edge(base, result, color=EdgeColors.smithing))
+        self.graph_builder.add_edge(Edge(addition, result, color=EdgeColors.smithing))
 
     def parse_item_tag(self, name: str, data: Dict):
         tag_node = get_item_tag_node(name)
@@ -87,13 +105,21 @@ class DataParser:
 
             self.graph_builder.add_node(value_node)
 
-            self.graph_builder.add_edge(Edge(value_node, tag_node, color="#009900"))
+            self.graph_builder.add_edge(
+                Edge(value_node, tag_node, color=EdgeColors.item_tag)
+            )
 
     def parse_loot_table(self, name: str, data: Dict):
         if name.startswith("blocks/"):
             self.parse_block_loot_table(name[len("blocks/") :], data)
         elif name.startswith("entities/"):
             self.parse_entity_loot_table(name[len("entities/") :], data)
+        elif name.startswith("chests/"):
+            self.parse_chest_loot_table(name[len("chests/") :], data)
+        elif name == "gameplay/piglin_bartering":
+            self.parse_piglin_bartering_loot_table(data)
+        elif name == "gameplay/fishing":
+            self.parse_fishing_loot_table(data)
 
     def parse_block_loot_table(self, name: str, data: Dict):
         block_node = get_item_or_block_node(name)
@@ -107,7 +133,7 @@ class DataParser:
             for drop_node in drop_nodes:
                 self.graph_builder.add_node(drop_node)
                 self.graph_builder.add_edge(
-                    Edge(block_node, drop_node, color="#ff00ff")
+                    Edge(block_node, drop_node, color=EdgeColors.block_drop)
                 )
 
     def parse_entity_loot_table(self, name: str, data: Dict):
@@ -122,8 +148,61 @@ class DataParser:
             for drop_node in drop_nodes:
                 self.graph_builder.add_node(drop_node)
                 self.graph_builder.add_edge(
-                    Edge(entity_node, drop_node, color="#00ffff")
+                    Edge(entity_node, drop_node, color=EdgeColors.entity_drop)
                 )
+
+    def parse_chest_loot_table(self, name: str, data: Dict):
+        chest_node = get_chest_node(name)
+
+        item_nodes: List[Node] = []
+        self.parse_loot_table_data(data, item_nodes)
+
+        if len(item_nodes) > 0:
+            self.graph_builder.add_node(chest_node)
+
+            for item_node in item_nodes:
+                self.graph_builder.add_node(item_node)
+                self.graph_builder.add_edge(
+                    Edge(chest_node, item_node, color=EdgeColors.chest_loot)
+                )
+
+    def parse_piglin_bartering_loot_table(self, data: Dict):
+        gold_ingot_node = get_item_or_block_node("gold_ingot")
+        self.graph_builder.add_node(gold_ingot_node)
+
+        bartering_node = Node("piglin_bartering", "piglin_bartering", shape="trapezium")
+        self.graph_builder.add_node(bartering_node)
+        self.graph_builder.add_edge(
+            Edge(gold_ingot_node, bartering_node, color=EdgeColors.piglin_bartering)
+        )
+
+        item_nodes: List[Node] = []
+        self.parse_loot_table_data(data, item_nodes)
+
+        for item_node in item_nodes:
+            self.graph_builder.add_node(item_node)
+            self.graph_builder.add_edge(
+                Edge(bartering_node, item_node, color=EdgeColors.piglin_bartering)
+            )
+
+    def parse_fishing_loot_table(self, data: Dict):
+        fishing_rod_node = get_item_or_block_node("fishing_rod")
+        self.graph_builder.add_node(fishing_rod_node)
+
+        fishing_node = Node("fishing", "fishing", shape="invhouse")
+        self.graph_builder.add_node(fishing_node)
+        self.graph_builder.add_edge(
+            Edge(fishing_rod_node, fishing_node, color=EdgeColors.fishing)
+        )
+
+        item_nodes: List[Node] = []
+        self.parse_loot_table_data(data, item_nodes)
+
+        for item_node in item_nodes:
+            self.graph_builder.add_node(item_node)
+            self.graph_builder.add_edge(
+                Edge(fishing_node, item_node, color=EdgeColors.fishing)
+            )
 
     def parse_loot_table_data(
         self, data: Dict, nodes: List[Node], not_node: Optional[Node] = None
@@ -178,6 +257,12 @@ def get_entity_node(name: str):
     name = without_namespace(name)
 
     return Node(f"entity/{name}", name, shape="hexagon")
+
+
+def get_chest_node(name: str):
+    name = without_namespace(name)
+
+    return Node(f"chest/{name}", name, shape="box3d")
 
 
 def parse_item_or_tag(data: Dict):

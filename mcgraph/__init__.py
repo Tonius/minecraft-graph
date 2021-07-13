@@ -4,10 +4,9 @@ from mcgraph.data_parser import DataParser
 from mcgraph.graph_builder import GraphBuilder
 
 # TODO:
-# - biomes
-# - dimensions / portals
-# - structures / loot chests
+# - world generation
 # - entity spawning
+# - potion ingredients
 # - hardcoded recipes (in-world, special crafting, etc.)
 
 
